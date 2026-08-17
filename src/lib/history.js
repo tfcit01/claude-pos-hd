@@ -25,6 +25,7 @@ export async function logHistory({ posId, action, field, oldValue, newValue, ope
 
 export const ACTION_LABELS = {
   manual_edit: "手動編輯",
+  manual_delete: "手動刪除",
   import_add: "匯入新增",
   import_update: "匯入異動",
   import_deactivate: "匯入標記停用",
