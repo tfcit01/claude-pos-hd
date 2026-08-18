@@ -2,8 +2,10 @@ import { useEffect, useMemo, useState } from "react";
 import { collection, onSnapshot } from "firebase/firestore";
 import { db } from "../firebase";
 import { HD_STATUS_OPTIONS, HD_STATUS_COLORS } from "../constants";
-import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from "recharts";
+import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, LabelList } from "recharts";
 import FloorStatusMap from "../components/FloorStatusMap";
+
+const REMAINING_COLOR = "#D8DEE8";
 
 export default function Dashboard() {
   const [devices, setDevices] = useState(null);
@@ -22,10 +24,13 @@ export default function Dashboard() {
       name: s,
       value: active.filter((d) => d.hdStatus === s).length,
     }));
-    const byOs = ["WIN7", "WIN10"].map((os) => ({
-      name: os,
-      count: active.filter((d) => d.os === os).length,
-    }));
+    const byOs = ["WIN7", "WIN10"].map((os) => {
+      const osDevices = active.filter((d) => d.os === os);
+      const total = osDevices.length;
+      const done = osDevices.filter((d) => d.hdStatus === "已完成").length;
+      const pct = total ? Math.round((done / total) * 100) : 0;
+      return { name: os, total, done, remaining: total - done, pctLabel: total ? `${pct}%` : "" };
+    });
     const total = active.length;
     const done = byStatus.find((s) => s.name === "已完成")?.value ?? 0;
     const pct = total ? Math.round((done / total) * 100) : 0;
@@ -98,22 +103,33 @@ export default function Dashboard() {
         ))}
       </section>
 
-      <section className="chart-card building-card">
-        <h3>硬碟狀態分佈</h3>
-        <FloorStatusMap devices={devices} />
-      </section>
+      <section className="dashboard-row">
+        <div className="chart-card building-card">
+          <h3>硬碟狀態分佈</h3>
+          <FloorStatusMap devices={devices} />
+        </div>
 
-      <section className="chart-card os-card">
-        <h3>作業系統分布</h3>
-        <ResponsiveContainer width="100%" height={220}>
-          <BarChart data={stats.byOs}>
-            <CartesianGrid strokeDasharray="3 3" stroke="#E4E7EC" />
-            <XAxis dataKey="name" stroke="#7C8698" fontSize={13} />
-            <YAxis stroke="#7C8698" fontSize={13} allowDecimals={false} />
-            <Tooltip />
-            <Bar dataKey="count" fill="#2F6FED" radius={[6, 6, 0, 0]} />
-          </BarChart>
-        </ResponsiveContainer>
+        <div className="chart-card os-card">
+          <h3>作業系統分布</h3>
+          <ResponsiveContainer width="100%" height={260}>
+            <BarChart data={stats.byOs} margin={{ top: 24, right: 8, left: 0, bottom: 0 }}>
+              <CartesianGrid strokeDasharray="3 3" stroke="#E4E7EC" />
+              <XAxis dataKey="name" stroke="#7C8698" fontSize={13} />
+              <YAxis stroke="#7C8698" fontSize={13} allowDecimals={false} />
+              <Tooltip
+                formatter={(value, key) => [value, key === "done" ? "已完成" : "未完成"]}
+              />
+              <Bar dataKey="done" stackId="os" fill={HD_STATUS_COLORS["已完成"]} radius={[0, 0, 0, 0]} />
+              <Bar dataKey="remaining" stackId="os" fill={REMAINING_COLOR} radius={[6, 6, 0, 0]}>
+                <LabelList dataKey="pctLabel" position="top" fontSize={13} fontWeight={700} fill="#16A34A" />
+              </Bar>
+            </BarChart>
+          </ResponsiveContainer>
+          <div className="os-legend">
+            <span className="legend-item"><i style={{ background: HD_STATUS_COLORS["已完成"] }} />已完成</span>
+            <span className="legend-item"><i style={{ background: REMAINING_COLOR }} />未完成</span>
+          </div>
+        </div>
       </section>
     </div>
   );
