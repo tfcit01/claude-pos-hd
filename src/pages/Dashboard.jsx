@@ -2,18 +2,8 @@ import { useEffect, useMemo, useState } from "react";
 import { collection, onSnapshot } from "firebase/firestore";
 import { db } from "../firebase";
 import { HD_STATUS_OPTIONS, HD_STATUS_COLORS } from "../constants";
-import {
-  PieChart,
-  Pie,
-  Cell,
-  Tooltip,
-  ResponsiveContainer,
-  BarChart,
-  Bar,
-  XAxis,
-  YAxis,
-  CartesianGrid,
-} from "recharts";
+import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from "recharts";
+import FloorStatusMap from "../components/FloorStatusMap";
 
 export default function Dashboard() {
   const [devices, setDevices] = useState(null);
@@ -108,42 +98,22 @@ export default function Dashboard() {
         ))}
       </section>
 
-      <section className="chart-grid">
-        <div className="chart-card">
-          <h3>各狀態分布</h3>
-          <ResponsiveContainer width="100%" height={240}>
-            <PieChart>
-              <Pie
-                data={stats.byStatus.filter((s) => s.value > 0)}
-                dataKey="value"
-                nameKey="name"
-                innerRadius={55}
-                outerRadius={85}
-                paddingAngle={2}
-              >
-                {stats.byStatus
-                  .filter((s) => s.value > 0)
-                  .map((s) => (
-                    <Cell key={s.name} fill={HD_STATUS_COLORS[s.name]} />
-                  ))}
-              </Pie>
-              <Tooltip />
-            </PieChart>
-          </ResponsiveContainer>
-        </div>
+      <section className="chart-card building-card">
+        <h3>硬碟狀態分佈</h3>
+        <FloorStatusMap devices={devices} />
+      </section>
 
-        <div className="chart-card">
-          <h3>作業系統分布</h3>
-          <ResponsiveContainer width="100%" height={240}>
-            <BarChart data={stats.byOs}>
-              <CartesianGrid strokeDasharray="3 3" stroke="#E4E7EC" />
-              <XAxis dataKey="name" stroke="#7C8698" fontSize={13} />
-              <YAxis stroke="#7C8698" fontSize={13} allowDecimals={false} />
-              <Tooltip />
-              <Bar dataKey="count" fill="#2F6FED" radius={[6, 6, 0, 0]} />
-            </BarChart>
-          </ResponsiveContainer>
-        </div>
+      <section className="chart-card os-card">
+        <h3>作業系統分布</h3>
+        <ResponsiveContainer width="100%" height={220}>
+          <BarChart data={stats.byOs}>
+            <CartesianGrid strokeDasharray="3 3" stroke="#E4E7EC" />
+            <XAxis dataKey="name" stroke="#7C8698" fontSize={13} />
+            <YAxis stroke="#7C8698" fontSize={13} allowDecimals={false} />
+            <Tooltip />
+            <Bar dataKey="count" fill="#2F6FED" radius={[6, 6, 0, 0]} />
+          </BarChart>
+        </ResponsiveContainer>
       </section>
     </div>
   );
