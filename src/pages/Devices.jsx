@@ -1,9 +1,10 @@
 import { useEffect, useMemo, useState } from "react";
-import { collection, deleteDoc, doc, onSnapshot, serverTimestamp, updateDoc, writeBatch } from "firebase/firestore";
+import { collection, doc, onSnapshot, serverTimestamp, updateDoc, writeBatch } from "firebase/firestore";
 import { db } from "../firebase";
 import { useAuth } from "../context/AuthContext";
 import { HD_STATUS_COLORS, HD_STATUS_OPTIONS, OS_OPTIONS, FIELD_LABELS } from "../constants";
 import { logHistory } from "../lib/history";
+import { computeFloorFromPosId } from "../lib/floor";
 
 export default function Devices() {
   const { user } = useAuth();
@@ -11,10 +12,12 @@ export default function Devices() {
   const [search, setSearch] = useState("");
   const [osFilter, setOsFilter] = useState("全部");
   const [statusFilter, setStatusFilter] = useState("全部");
+  const [floorFilter, setFloorFilter] = useState("全部");
   const [editing, setEditing] = useState(null); // device object or null
   const [selected, setSelected] = useState({}); // id -> true
   const [confirmDeleteAll, setConfirmDeleteAll] = useState(false);
   const [busy, setBusy] = useState(false);
+  const [fillMsg, setFillMsg] = useState("");
 
   useEffect(() => {
     const unsub = onSnapshot(collection(db, "pos_devices"), (snap) => {
@@ -23,12 +26,23 @@ export default function Devices() {
     return unsub;
   }, []);
 
+  const activeDevices = useMemo(() => (devices || []).filter((d) => d.status !== "inactive"), [devices]);
+
+  const floorOptions = useMemo(() => {
+    const set = new Set(activeDevices.map((d) => d.floor).filter(Boolean));
+    return Array.from(set).sort();
+  }, [activeDevices]);
+
+  const missingFloorCount = useMemo(
+    () => activeDevices.filter((d) => !d.floor).length,
+    [activeDevices]
+  );
+
   const filtered = useMemo(() => {
-    if (!devices) return [];
-    return devices
-      .filter((d) => d.status !== "inactive")
+    return activeDevices
       .filter((d) => (osFilter === "全部" ? true : d.os === osFilter))
       .filter((d) => (statusFilter === "全部" ? true : d.hdStatus === statusFilter))
+      .filter((d) => (floorFilter === "全部" ? true : d.floor === floorFilter))
       .filter((d) => {
         if (!search.trim()) return true;
         const q = search.trim().toLowerCase();
@@ -38,7 +52,7 @@ export default function Devices() {
         );
       })
       .sort((a, b) => (a.posId || "").localeCompare(b.posId || ""));
-  }, [devices, search, osFilter, statusFilter]);
+  }, [activeDevices, search, osFilter, statusFilter, floorFilter]);
 
   // 篩選條件改變時,清掉不在目前清單中的選取項目
   useEffect(() => {
@@ -51,7 +65,7 @@ export default function Devices() {
       return next;
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [search, osFilter, statusFilter, devices]);
+  }, [search, osFilter, statusFilter, floorFilter, devices]);
 
   const selectedIds = Object.keys(selected).filter((id) => selected[id]);
   const allVisibleChecked = filtered.length > 0 && filtered.every((d) => selected[d.id]);
@@ -121,11 +135,47 @@ export default function Devices() {
     setConfirmDeleteAll(false);
   };
 
+  const handleAutoFillFloors = async () => {
+    const targets = activeDevices.filter((d) => !d.floor);
+    if (targets.length === 0) {
+      setFillMsg("目前所有設備都已經有樓層資料了");
+      setTimeout(() => setFillMsg(""), 3000);
+      return;
+    }
+    setBusy(true);
+    const chunks = [];
+    for (let i = 0; i < targets.length; i += 450) chunks.push(targets.slice(i, i + 450));
+    let filled = 0, unresolved = 0;
+    for (const chunk of chunks) {
+      const batch = writeBatch(db);
+      const historyToLog = [];
+      chunk.forEach((d) => {
+        const floor = computeFloorFromPosId(d.posId);
+        if (floor) {
+          batch.update(doc(db, "pos_devices", d.id), {
+            floor,
+            lastUpdated: serverTimestamp(),
+            lastUpdatedBy: user.email,
+          });
+          filled++;
+          historyToLog.push({ posId: d.posId, action: "manual_edit", field: "樓層", oldValue: "", newValue: floor, operator: user.email });
+        } else {
+          unresolved++;
+        }
+      });
+      await batch.commit();
+      for (const h of historyToLog) await logHistory(h);
+    }
+    setBusy(false);
+    setFillMsg(`已補齊 ${filled} 筆樓層${unresolved > 0 ? `,${unresolved} 筆機號無法判斷、請手動填寫` : ""}`);
+    setTimeout(() => setFillMsg(""), 6000);
+  };
+
   return (
     <div className="page">
       <header className="page-header">
         <h1>設備清單</h1>
-        <p>{devices ? `共 ${filtered.length} 筆(全部 ${devices.filter((d) => d.status !== "inactive").length} 台)` : "載入中…"}</p>
+        <p>{devices ? `共 ${filtered.length} 筆(全部 ${activeDevices.length} 台)` : "載入中…"}</p>
       </header>
 
       <div className="toolbar">
@@ -135,6 +185,12 @@ export default function Devices() {
           value={search}
           onChange={(e) => setSearch(e.target.value)}
         />
+        <select value={floorFilter} onChange={(e) => setFloorFilter(e.target.value)}>
+          <option>全部</option>
+          {floorOptions.map((o) => (
+            <option key={o}>{o}</option>
+          ))}
+        </select>
         <select value={osFilter} onChange={(e) => setOsFilter(e.target.value)}>
           <option>全部</option>
           {OS_OPTIONS.map((o) => (
@@ -147,6 +203,11 @@ export default function Devices() {
             <option key={o}>{o}</option>
           ))}
         </select>
+        {missingFloorCount > 0 && (
+          <button className="btn-ghost" onClick={handleAutoFillFloors} disabled={busy}>
+            {busy ? "處理中…" : `依機號規則自動補齊樓層(${missingFloorCount})`}
+          </button>
+        )}
         <button
           className="btn-ghost danger-outline"
           onClick={() => setConfirmDeleteAll(true)}
@@ -155,6 +216,8 @@ export default function Devices() {
           刪除全部(目前清單 {filtered.length} 筆)
         </button>
       </div>
+
+      {fillMsg && <div className="inline-msg">{fillMsg}</div>}
 
       {selectedIds.length > 0 && (
         <div className="selection-bar">
@@ -178,6 +241,7 @@ export default function Devices() {
                 />
               </th>
               <th>POS機號</th>
+              <th>樓層</th>
               <th>店櫃名稱</th>
               <th>作業系統</th>
               <th>硬碟更換狀態</th>
@@ -197,6 +261,7 @@ export default function Devices() {
                   />
                 </td>
                 <td className="mono">{d.posId}</td>
+                <td>{d.floor || <span className="muted">未設定</span>}</td>
                 <td>{d.storeName}</td>
                 <td>{d.os}</td>
                 <td>
@@ -215,7 +280,7 @@ export default function Devices() {
             ))}
             {filtered.length === 0 && (
               <tr>
-                <td colSpan={8} className="empty-row">找不到符合條件的設備</td>
+                <td colSpan={9} className="empty-row">找不到符合條件的設備</td>
               </tr>
             )}
           </tbody>
@@ -292,6 +357,11 @@ function EditModal({ device, devices, onClose, operator }) {
     }
   };
 
+  const handleSuggestFloor = () => {
+    const suggestion = computeFloorFromPosId(form.posId);
+    if (suggestion) set("floor", suggestion);
+  };
+
   const handleSave = async () => {
     const newPosId = (form.posId || "").trim();
     if (!newPosId) {
@@ -307,7 +377,7 @@ function EditModal({ device, devices, onClose, operator }) {
     }
 
     setSaving(true);
-    const fieldKeys = ["storeName", "os", "hdStatus", "hdVersion", "printerDriverVer"];
+    const fieldKeys = ["storeName", "floor", "os", "hdStatus", "hdVersion", "printerDriverVer"];
     const changedFields = fieldKeys.filter((k) => (device[k] ?? "") !== (form[k] ?? ""));
     const posIdChanged = newPosId !== device.posId;
 
@@ -318,6 +388,7 @@ function EditModal({ device, devices, onClose, operator }) {
       batch.set(newRef, {
         storeName: form.storeName || "",
         posId: newPosId,
+        floor: form.floor || "",
         os: form.os || "",
         hdStatus: form.hdStatus || "未排程",
         hdVersion: form.hdVersion || "",
@@ -381,6 +452,13 @@ function EditModal({ device, devices, onClose, operator }) {
               className={posIdError ? "input-error" : ""}
             />
             {posIdError && <span className="field-error">{posIdError}</span>}
+          </label>
+          <label>
+            樓層
+            <div className="input-with-action">
+              <input value={form.floor || ""} onChange={(e) => set("floor", e.target.value)} />
+              <button type="button" className="btn-mini" onClick={handleSuggestFloor}>依機號判斷</button>
+            </div>
           </label>
           <label>
             店櫃名稱

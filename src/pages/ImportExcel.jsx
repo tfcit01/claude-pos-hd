@@ -4,6 +4,7 @@ import { db } from "../firebase";
 import { useAuth } from "../context/AuthContext";
 import { parseExcelFile, computeDiff } from "../lib/excelDiff";
 import { logHistory } from "../lib/history";
+import { computeFloorFromPosId } from "../lib/floor";
 import { FIELD_LABELS, HD_STATUS_OPTIONS, OS_OPTIONS } from "../constants";
 
 const STEPS = ["upload", "review", "done"];
@@ -63,6 +64,7 @@ export default function ImportExcel() {
       batch.set(ref, {
         storeName: row.storeName || "",
         posId: row.posId,
+        floor: computeFloorFromPosId(row.posId),
         os: row.os || "",
         hdStatus: row.hdStatus && HD_STATUS_OPTIONS.includes(row.hdStatus) ? row.hdStatus : "未排程",
         hdVersion: row.hdVersion || "",

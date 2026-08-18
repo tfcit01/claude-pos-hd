@@ -148,6 +148,19 @@ a { color: inherit; }
 .input-error { border-color: var(--danger) !important; }
 .field-error { color: var(--danger); font-size: 11.5px; }
 
+.muted { color: var(--text-muted); font-size: 12.5px; }
+.inline-msg {
+  background: #E9F9EE; color: #16A34A; border: 1px solid #C6EDD4;
+  padding: 8px 14px; border-radius: 8px; font-size: 13px; margin-bottom: 14px;
+}
+.input-with-action { display: flex; gap: 6px; }
+.input-with-action input { flex: 1; }
+.btn-mini {
+  white-space: nowrap; font-size: 12px; padding: 0 10px; border-radius: 8px;
+  border: 1px solid var(--border); background: var(--bg); color: var(--text); cursor: pointer;
+}
+.btn-mini:hover { background: var(--accent-soft); border-color: #C9DBFC; color: var(--accent); }
+
 /* ---------- Login ---------- */
 .login-page {
   height: 100vh; display: flex; align-items: center; justify-content: center;

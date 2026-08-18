@@ -24,6 +24,7 @@ export const FIELD_ALIASES = {
 export const FIELD_LABELS = {
   storeName: "店櫃名稱",
   posId: "POS機號",
+  floor: "樓層",
   os: "作業系統",
   hdStatus: "硬碟更換狀態",
   hdVersion: "硬碟版號",
