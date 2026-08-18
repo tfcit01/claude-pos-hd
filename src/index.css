@@ -305,6 +305,13 @@ tbody tr:hover { background: #FAFBFC; }
 }
 .status-pill::before { content: ""; width: 6px; height: 6px; border-radius: 50%; background: var(--c); }
 
+.status-cell { display: flex; flex-direction: column; gap: 3px; align-items: flex-start; }
+.status-sub {
+  font-size: 11px; color: var(--text-muted); max-width: 180px;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.status-none { color: var(--text-muted); font-size: 13px; }
+
 /* ---------- Modal ---------- */
 .modal-backdrop {
   position: fixed; inset: 0; background: rgba(20,33,46,0.45);

@@ -6,6 +6,8 @@ import { HD_STATUS_COLORS, HD_STATUS_OPTIONS, OS_OPTIONS, FIELD_LABELS } from ".
 import { logHistory } from "../lib/history";
 import { computeFloorFromPosId } from "../lib/floor";
 
+const todayISO = () => new Date().toISOString().slice(0, 10);
+
 export default function Devices() {
   const { user } = useAuth();
   const [devices, setDevices] = useState(null);
@@ -265,9 +267,7 @@ export default function Devices() {
                 <td>{d.storeName}</td>
                 <td>{d.os}</td>
                 <td>
-                  <span className="status-pill" style={{ "--c": HD_STATUS_COLORS[d.hdStatus] }}>
-                    {d.hdStatus}
-                  </span>
+                  <StatusCell device={d} />
                 </td>
                 <td className="mono">{d.hdVersion || "—"}</td>
                 <td className="mono">{d.printerDriverVer || "—"}</td>
@@ -304,6 +304,32 @@ export default function Devices() {
           onConfirm={handleDeleteAllFiltered}
         />
       )}
+    </div>
+  );
+}
+
+function StatusCell({ device }) {
+  const s = device.hdStatus;
+
+  if (s === "未排程") {
+    return <span className="status-none">---</span>;
+  }
+
+  let sub = null;
+  if (s === "已排程") {
+    sub = device.scheduledDate ? `預定 ${device.scheduledDate}` : null;
+  } else if (s === "已完成") {
+    sub = device.completedDate ? `完成 ${device.completedDate}` : null;
+  } else if (s === "異常暫緩") {
+    sub = device.pauseReason || null;
+  }
+
+  return (
+    <div className="status-cell">
+      <span className="status-pill" style={{ "--c": HD_STATUS_COLORS[s] }}>
+        {s}
+      </span>
+      {sub && <div className="status-sub" title={sub}>{sub}</div>}
     </div>
   );
 }
@@ -362,6 +388,16 @@ function EditModal({ device, devices, onClose, operator }) {
     if (suggestion) set("floor", suggestion);
   };
 
+  const handleStatusChange = (v) => {
+    setForm((f) => {
+      const next = { ...f, hdStatus: v };
+      if (v === "已完成" && !f.completedDate) {
+        next.completedDate = todayISO();
+      }
+      return next;
+    });
+  };
+
   const handleSave = async () => {
     const newPosId = (form.posId || "").trim();
     if (!newPosId) {
@@ -377,7 +413,10 @@ function EditModal({ device, devices, onClose, operator }) {
     }
 
     setSaving(true);
-    const fieldKeys = ["storeName", "floor", "os", "hdStatus", "hdVersion", "printerDriverVer"];
+    const fieldKeys = [
+      "storeName", "floor", "os", "hdStatus", "hdVersion", "printerDriverVer",
+      "scheduledDate", "completedDate", "pauseReason",
+    ];
     const changedFields = fieldKeys.filter((k) => (device[k] ?? "") !== (form[k] ?? ""));
     const posIdChanged = newPosId !== device.posId;
 
@@ -393,6 +432,9 @@ function EditModal({ device, devices, onClose, operator }) {
         hdStatus: form.hdStatus || "未排程",
         hdVersion: form.hdVersion || "",
         printerDriverVer: form.printerDriverVer || "",
+        scheduledDate: form.scheduledDate || "",
+        completedDate: form.completedDate || "",
+        pauseReason: form.pauseReason || "",
         status: "active",
         lastUpdated: serverTimestamp(),
         lastUpdatedBy: operator,
@@ -474,12 +516,42 @@ function EditModal({ device, devices, onClose, operator }) {
           </label>
           <label>
             硬碟更換狀態
-            <select value={form.hdStatus || ""} onChange={(e) => set("hdStatus", e.target.value)}>
+            <select value={form.hdStatus || ""} onChange={(e) => handleStatusChange(e.target.value)}>
               {HD_STATUS_OPTIONS.map((o) => (
                 <option key={o}>{o}</option>
               ))}
             </select>
           </label>
+          {form.hdStatus === "已排程" && (
+            <label>
+              預定日期
+              <input
+                type="date"
+                value={form.scheduledDate || ""}
+                onChange={(e) => set("scheduledDate", e.target.value)}
+              />
+            </label>
+          )}
+          {form.hdStatus === "已完成" && (
+            <label>
+              完成日期
+              <input
+                type="date"
+                value={form.completedDate || ""}
+                onChange={(e) => set("completedDate", e.target.value)}
+              />
+            </label>
+          )}
+          {form.hdStatus === "異常暫緩" && (
+            <label className="span-2">
+              暫緩原因
+              <input
+                value={form.pauseReason || ""}
+                onChange={(e) => set("pauseReason", e.target.value)}
+                placeholder="請說明暫緩原因"
+              />
+            </label>
+          )}
           <label>
             硬碟版號
             <input value={form.hdVersion || ""} onChange={(e) => set("hdVersion", e.target.value)} />

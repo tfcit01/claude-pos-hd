@@ -29,4 +29,7 @@ export const FIELD_LABELS = {
   hdStatus: "硬碟更換狀態",
   hdVersion: "硬碟版號",
   printerDriverVer: "發票機驅動程式版本",
+  scheduledDate: "預定日期",
+  completedDate: "完成日期",
+  pauseReason: "暫緩原因",
 };
