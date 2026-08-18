@@ -223,7 +223,12 @@ export default function Devices() {
       </div>
 
       {editing && (
-        <EditModal device={editing} onClose={() => setEditing(null)} operator={user.email} />
+        <EditModal
+          device={editing}
+          devices={devices || []}
+          onClose={() => setEditing(null)}
+          operator={user.email}
+        />
       )}
 
       {confirmDeleteAll && (
@@ -265,19 +270,84 @@ function DeleteAllModal({ count, busy, onCancel, onConfirm }) {
   );
 }
 
-function EditModal({ device, onClose, operator }) {
+function EditModal({ device, devices, onClose, operator }) {
   const [form, setForm] = useState({ ...device });
   const [saving, setSaving] = useState(false);
+  const [posIdError, setPosIdError] = useState("");
 
   const set = (k, v) => setForm((f) => ({ ...f, [k]: v }));
 
-  const handleSave = async () => {
-    setSaving(true);
-    const changedFields = ["storeName", "os", "hdStatus", "hdVersion", "printerDriverVer"].filter(
-      (k) => (device[k] ?? "") !== (form[k] ?? "")
-    );
+  const handlePosIdChange = (v) => {
+    set("posId", v);
+    const trimmed = v.trim();
+    if (!trimmed) {
+      setPosIdError("POS機號不可空白");
+    } else if (
+      trimmed !== device.posId &&
+      devices.some((d) => d.id !== device.id && d.posId === trimmed && d.status !== "inactive")
+    ) {
+      setPosIdError("這個機號已經存在,請確認是否重複");
+    } else {
+      setPosIdError("");
+    }
+  };
 
-    if (changedFields.length > 0) {
+  const handleSave = async () => {
+    const newPosId = (form.posId || "").trim();
+    if (!newPosId) {
+      setPosIdError("POS機號不可空白");
+      return;
+    }
+    if (
+      newPosId !== device.posId &&
+      devices.some((d) => d.id !== device.id && d.posId === newPosId && d.status !== "inactive")
+    ) {
+      setPosIdError("這個機號已經存在,請確認是否重複");
+      return;
+    }
+
+    setSaving(true);
+    const fieldKeys = ["storeName", "os", "hdStatus", "hdVersion", "printerDriverVer"];
+    const changedFields = fieldKeys.filter((k) => (device[k] ?? "") !== (form[k] ?? ""));
+    const posIdChanged = newPosId !== device.posId;
+
+    if (posIdChanged) {
+      // POS機號同時是文件ID,無法直接改名,改用「建立新文件 + 刪除舊文件」的方式搬移資料
+      const batch = writeBatch(db);
+      const newRef = doc(db, "pos_devices", newPosId);
+      batch.set(newRef, {
+        storeName: form.storeName || "",
+        posId: newPosId,
+        os: form.os || "",
+        hdStatus: form.hdStatus || "未排程",
+        hdVersion: form.hdVersion || "",
+        printerDriverVer: form.printerDriverVer || "",
+        status: "active",
+        lastUpdated: serverTimestamp(),
+        lastUpdatedBy: operator,
+      });
+      batch.delete(doc(db, "pos_devices", device.id));
+      await batch.commit();
+
+      await logHistory({
+        posId: newPosId,
+        action: "manual_edit",
+        field: "POS機號",
+        oldValue: device.posId,
+        newValue: newPosId,
+        operator,
+      });
+      for (const field of changedFields) {
+        await logHistory({
+          posId: newPosId,
+          action: "manual_edit",
+          field: FIELD_LABELS[field],
+          oldValue: device[field] ?? "",
+          newValue: form[field] ?? "",
+          operator,
+        });
+      }
+    } else if (changedFields.length > 0) {
       await updateDoc(doc(db, "pos_devices", device.id), {
         ...Object.fromEntries(changedFields.map((k) => [k, form[k]])),
         lastUpdated: serverTimestamp(),
@@ -303,6 +373,15 @@ function EditModal({ device, onClose, operator }) {
       <div className="modal" onClick={(e) => e.stopPropagation()}>
         <h2>編輯設備 · {device.posId}</h2>
         <div className="modal-grid">
+          <label>
+            POS機號
+            <input
+              value={form.posId || ""}
+              onChange={(e) => handlePosIdChange(e.target.value)}
+              className={posIdError ? "input-error" : ""}
+            />
+            {posIdError && <span className="field-error">{posIdError}</span>}
+          </label>
           <label>
             店櫃名稱
             <input value={form.storeName || ""} onChange={(e) => set("storeName", e.target.value)} />
@@ -335,9 +414,14 @@ function EditModal({ device, onClose, operator }) {
             />
           </label>
         </div>
+        {form.posId !== device.posId && !posIdError && (
+          <div className="form-warning">
+            機號將從「{device.posId}」變更為「{form.posId}」,系統會保留歷史紀錄軌跡。
+          </div>
+        )}
         <div className="modal-actions">
           <button className="btn-ghost" onClick={onClose}>取消</button>
-          <button className="btn-primary" onClick={handleSave} disabled={saving}>
+          <button className="btn-primary" onClick={handleSave} disabled={saving || !!posIdError}>
             {saving ? "儲存中…" : "儲存變更"}
           </button>
         </div>
